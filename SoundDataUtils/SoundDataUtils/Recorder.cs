@@ -1,7 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using CSCore;
 using CSCore.Codecs.WAV;
@@ -11,14 +9,6 @@ using CSCore.Streams;
 
 namespace SoundDataUtils
 {
-
-    enum CaptureMode
-    {
-        Capture = 1,
-        // ReSharper disable once UnusedMember.Local
-        LoopbackCapture = 2
-    }
-
     public static class Recorder
     {
         public static void RecordTo(string fileName, TimeSpan time, WaveFormat format)
@@ -66,5 +56,4 @@ namespace SoundDataUtils
             }
         }
     }
-
 }
