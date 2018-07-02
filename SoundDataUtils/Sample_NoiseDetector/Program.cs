@@ -21,16 +21,48 @@ namespace Sample_NoiseDetector
     {
         static void Main(string[] args)
         {
+            var thresholdedLevel = 90;
+
+            var circularBuffer = new ConcuurentCircularBuffer<double>(20);
+
+            bool ShouldScream()
+            {
+                var currentBuffer = circularBuffer.Read();
+                var result = currentBuffer.Average() > thresholdedLevel;
+                Console.WriteLine(result);
+
+                return result;
+            }
+
+            void UpdateState(double current)
+            {
+                //If already reached threshold stop adding 
+                circularBuffer.Put(ShouldScream() ? thresholdedLevel / 2 : current);
+            }
+
+            var th = new Thread(() =>
+            {
+                while (true)
+                {
+                    Player.Play("aaa.mp3", () => !ShouldScream());
+                    Thread.Sleep(1000);
+                }
+            });
+            th.Start();
+
             var noiseInfo = new NoiseInfo();
-            int maxDecibels = 200;
             var noiseState = Observable.FromEventPattern<NoiseInfoEventArgs>(
                 h => noiseInfo.OnNoiseData += h,
                 h => noiseInfo.OnNoiseData -= h)
                 .Select(e => e.EventArgs);
             noiseState
-                .Buffer(30)
-                .Select(b => b.Average(i => i.Decibels))
-                .Subscribe(averageDecibels => Console.WriteLine(new string('=', Console.WindowWidth * (int)averageDecibels / maxDecibels)));
+                .Buffer(50).Select(b => b.Average(i => i.Decibels))
+                .Subscribe(averageSoundLevel =>
+                {
+                    UpdateState(averageSoundLevel);
+
+                    LogToConsole(averageSoundLevel, thresholdedLevel);
+                });
             noiseInfo.OnStopped += (es, e) =>
             {
                 Console.WriteLine("Stopped");
@@ -38,10 +70,78 @@ namespace Sample_NoiseDetector
                 noiseInfo.Start();
             };
             noiseInfo.Start();
-            Thread.Sleep(-1);
+            th.Join();
 
         }
 
+        private static void LogToConsole(double averageSoundLevel, int thresholdedLevel)
+        {
+            var levelString = new string('=', Console.WindowWidth * (int)averageSoundLevel / 100);
+            if (levelString.Length > thresholdedLevel)
+            {
+                var newStringCharArray = levelString.ToCharArray();
+                newStringCharArray[thresholdedLevel] = '|';
+                var newString = new string(newStringCharArray);
+                levelString = newString;
+            }
+
+            Console.WriteLine(levelString);
+        }
+    }
+    public interface ICircularBuffer<T>
+    {
+        void Put(T item);  // put an item
+        T[] Read(); // provides the last "n" requests
+    }
+    public class ConcuurentCircularBuffer<T> : ICircularBuffer<T>
+    {
+
+        private T[] buffer;
+        private int last = 0;
+        private int sz;
+        private object lockObject = new object();
+
+        public ConcuurentCircularBuffer(int sz)
+        {
+            // array index starts at 1
+            this.sz = sz;
+            buffer = new T[sz + 1];
+        }
+
+        public void Put(T item)
+        {
+            lock (lockObject)
+            {
+                last++;
+                last = last > sz ? 1 : last;
+                buffer[last] = item;
+            }
+        }
+
+        public T[] Read()
+        {
+            T[] arr = new T[sz];
+
+            lock (lockObject)
+            {
+                int iterator = 0;
+                for (int read = 0; read < sz; read++)
+                {
+                    int index = last - iterator;
+                    index = index <= 0 ? (sz + index) : index;
+                    if (buffer[index] != null)
+                    {
+                        arr[iterator] = buffer[index];
+                    }
+                    else
+                    {
+                        break;
+                    }
+                    iterator++;
+                }
+            }
+            return arr;
+        }
     }
 
     public class NoiseInfo
@@ -99,7 +199,8 @@ namespace Sample_NoiseDetector
                                 //keep reading as long as we still get some data
                                 while ((read = convertedSource.Read(buffer, 0, buffer.Length)) > 0)
                                 {
-                                    var decibelsCalibrated = (int)Math.Round(GetDecibels(buffer, 30, 20));
+
+                                    var decibelsCalibrated = (int)Math.Round(GetDecibels(buffer, 30, 20, 140));
                                     if (decibelsCalibrated < 0)
                                         decibelsCalibrated = 0;
                                     OnNoiseData?.Invoke(null, new NoiseInfoEventArgs() { Decibels = decibelsCalibrated });
@@ -131,20 +232,30 @@ namespace Sample_NoiseDetector
             }
         }
 
-        public static double GetDecibels(byte[] playBuffer, double calibrateAdd, double calibratescale)
+        public static double GetDecibels(byte[] playBuffer, double calibrateAdd, double calibratescale, double maxDecibels)
         {
-            double sum = 0;
-            for (var i = 0; i < playBuffer.Length; i = i + 2)
+            try
             {
-                double sample = BitConverter.ToInt16(playBuffer, i) / 32768.0;
-                sum += (sample * sample);
-            }
+                double sum = 0;
+                for (var i = 0; i < playBuffer.Length; i = i + 2)
+                {
+                    double sample = BitConverter.ToInt16(playBuffer, i) / 32768.0;
+                    sum += (sample * sample);
+                }
 
-            double rms = Math.Sqrt(sum / (playBuffer.Length / 2));
-            var decibel = 20 * Math.Log10(rms);
-            decibel += calibrateAdd;
-            decibel *= calibratescale;
-            return decibel;
+                double rms = Math.Sqrt(sum / (playBuffer.Length / 2));
+                var soundLevel = 20 * Math.Log10(rms);
+                soundLevel += calibrateAdd;
+                soundLevel *= calibratescale;
+                if (soundLevel < 0) soundLevel = 0;
+                if (soundLevel > maxDecibels) soundLevel = maxDecibels;
+                return soundLevel / maxDecibels * 100;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                throw;
+            }
         }
 
 
