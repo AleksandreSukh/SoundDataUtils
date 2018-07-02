@@ -28,8 +28,9 @@ namespace Sample_NoiseDetector
             bool ShouldScream()
             {
                 var currentBuffer = circularBuffer.Read();
+                var avg = currentBuffer.Average();
                 var result = currentBuffer.Average() > thresholdedLevel;
-                Console.WriteLine(result);
+                Console.WriteLine(avg);
 
                 return result;
             }
@@ -37,7 +38,7 @@ namespace Sample_NoiseDetector
             void UpdateState(double current)
             {
                 //If already reached threshold stop adding 
-                circularBuffer.Put(ShouldScream() ? thresholdedLevel / 2 : current);
+                circularBuffer.Put(ShouldScream() ? (thresholdedLevel / 1.1) : current);
             }
 
             var th = new Thread(() =>

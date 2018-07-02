@@ -30,7 +30,7 @@ namespace SoundDataUtils
                 else
                     while (!ShouldStop())
                     {
-                        Thread.Sleep(2000);
+                        Thread.Sleep(5000);
                     }
                 soundOut.Stop();
             }
